@@ -1,0 +1,76 @@
+name: bps-pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * 1"  # seg 12:00 UTC
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: rq-pharma-data-lab-26k9
+  BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
+
+jobs:
+  landing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download -> landing (BPS)
+        env:
+          BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
+        run: |
+          chmod +x pipelines/bps_to_landing.sh
+          ./pipelines/bps_to_landing.sh 2024 2025
+
+      - name: Check landing
+        run: |
+          gcloud storage ls --recursive "gs://$BUCKET/landing/bps/" | head -n 200
+
+  staging:
+    runs-on: ubuntu-latest
+    needs: landing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r pipelines/requirements.txt
+
+      - name: Landing -> STG (Parquet)
+        env:
+          BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
+          LANDING_PREFIX: landing/bps/
+          STG_PREFIX: stg/bps/
+        run: |
+          python pipelines/bps_landing_to_stg.py 2024 2025
+
+      - name: Check STG
+        run: |
+          gcloud storage ls --recursive "gs://$BUCKET/stg/bps/" | head -n 200
