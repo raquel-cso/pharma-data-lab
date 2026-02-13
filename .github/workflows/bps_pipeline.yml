@@ -33,7 +33,7 @@ jobs:
           BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
         run: |
           chmod +x pipelines/bps_to_landing.sh
-          ./pipelines/bps_to_landing.sh 2024 2025
+          ./pipelines/bps/bps_to_landing.sh 2024 2025
 
       - name: Check landing
         run: |
@@ -61,7 +61,7 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install -r pipelines/requirements.txt
+          pip install -r pipelines/bps/requirements.txt
 
       - name: Landing -> STG (Parquet)
         env:
@@ -69,7 +69,7 @@ jobs:
           LANDING_PREFIX: landing/bps/
           STG_PREFIX: stg/bps/
         run: |
-          python pipelines/bps_landing_to_stg.py 2024 2025
+          python pipelines/bps/bps_landing_to_stg.py 2024 2025
 
       - name: Check STG
         run: |
@@ -98,7 +98,7 @@ jobs:
   
       - name: Install dependencies
         run: |
-          pip install -r pipelines/requirements.txt
+          pip install -r pipelines/bps/requirements.txt
   
       - name: Build Silver in BigQuery (Pandas)
         env:
@@ -106,11 +106,8 @@ jobs:
           BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
           SRC_PREFIX: stg/bps/
           TARGET: rq-pharma-data-lab-26k9.silver_bps.bps_purchases
-          # opcional: filtrar anos e/ou ingest_date
-          YEARS: "2024,2025"
-          # INGEST_DATE: "2026-02-13"
         run: |
-          python pipelines/bps_stg_parquet_to_silver_bq.py
+          python pipelines/bps/bps_stg_parquet_to_silver_bq.py
   
       - name: Verify Silver rowcount
         run: |
