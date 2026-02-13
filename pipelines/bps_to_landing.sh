@@ -1,13 +1,5 @@
-cat > bps_to_landing.sh << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-
-# Uso:
-#   BUCKET="seu-bucket" ./bps_to_landing.sh 2024 2025
-# Opções:
-#   INGEST_DATE=YYYY-MM-DD  (padrão: data de hoje em SP)
-#   FORCE=1     -> sobrescreve no GCS se já existir
-#   EXTRACT=1   -> extrai o CSV e envia para raw/bps/
 
 : "${BUCKET:?Defina o BUCKET. Ex: BUCKET='seu-bucket' ./bps_to_landing.sh 2025}"
 
@@ -24,6 +16,11 @@ fi
 workdir="/tmp/bps_download"
 mkdir -p "$workdir"
 
+exists_gcs () {
+  # retorna 0 se existe, 1 se não existe
+  gcloud storage ls "$1" >/dev/null 2>&1
+}
+
 for YEAR in "${years[@]}"; do
   if [[ ! "$YEAR" =~ ^20[0-9]{2}$ ]]; then
     echo "Ano inválido: $YEAR (use 4 dígitos, ex: 2025)"
@@ -38,8 +35,7 @@ for YEAR in "${years[@]}"; do
   echo "==> [$YEAR] Baixando: $url"
   echo "==> [$YEAR] Destino:  $gcs_zip"
 
-  # Se já existe no GCS e não é FORCE, pula
-  if gsutil -q stat "$gcs_zip" 2>/dev/null; then
+  if exists_gcs "$gcs_zip"; then
     if [ "$FORCE" -ne 1 ]; then
       echo "==> [$YEAR] Já existe no GCS. Pulando (use FORCE=1 para sobrescrever)."
       continue
@@ -48,17 +44,13 @@ for YEAR in "${years[@]}"; do
   fi
 
   curl -fL "$url" -o "$local_zip"
-
   if [ ! -s "$local_zip" ]; then
     echo "==> [$YEAR] ERRO: zip baixado vazio."
     exit 1
   fi
 
-  if [ "$FORCE" -eq 1 ]; then
-    gsutil cp "$local_zip" "$gcs_zip"
-  else
-    gsutil cp -n "$local_zip" "$gcs_zip"
-  fi
+  # upload
+  gcloud storage cp "$local_zip" "$gcs_zip"
 
   if [ "$EXTRACT" -eq 1 ]; then
     echo "==> [$YEAR] Extraindo CSV e enviando para raw/..."
@@ -71,11 +63,7 @@ for YEAR in "${years[@]}"; do
     fi
 
     gcs_csv="gs://${BUCKET}/raw/bps/year=${YEAR}/ingest_date=${INGEST_DATE}/${YEAR}.csv"
-    if [ "$FORCE" -eq 1 ]; then
-      gsutil cp "$local_csv" "$gcs_csv"
-    else
-      gsutil cp -n "$local_csv" "$gcs_csv"
-    fi
+    gcloud storage cp "$local_csv" "$gcs_csv"
     echo "==> [$YEAR] OK raw: $gcs_csv"
   fi
 
@@ -83,6 +71,3 @@ for YEAR in "${years[@]}"; do
 done
 
 echo "Tudo concluído."
-EOF
-
-chmod +x bps_to_landing.sh
