@@ -3,3 +3,6 @@ pyarrow
 gcsfs
 google-cloud-storage
 google-cloud-bigquery
+papermill
+ipykernel
+jupyter
