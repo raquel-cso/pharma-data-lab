@@ -61,15 +61,17 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install -r pipelines/bps/requirements.txt
+          pip install -r requirements.txt
 
       - name: Landing -> STG (Parquet)
         env:
           BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
-          LANDING_PREFIX: landing/bps/
-          STG_PREFIX: stg/bps/
         run: |
-          python pipelines/bps/bps_landing_to_stg.py 2024 2025
+          papermill pipelines/bps/bps_landing_to_stg.ipynb /tmp/out_stg.ipynb \
+            -p BUCKET "$BUCKET" \
+            -p LANDING_PREFIX "landing/bps/" \
+            -p STG_PREFIX "stg/bps/" \
+            -p YEARS "2024,2025"
 
       - name: Check STG
         run: |
@@ -98,18 +100,22 @@ jobs:
   
       - name: Install dependencies
         run: |
-          pip install -r pipelines/bps/requirements.txt
+          pip install -r requirements.txt
   
-      - name: Build Silver in BigQuery (Pandas)
+      - name: Run Silver notebook
         env:
           PROJECT: rq-pharma-data-lab-26k9
           BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
-          SRC_PREFIX: stg/bps/
-          TARGET: rq-pharma-data-lab-26k9.silver_bps.bps_purchases
         run: |
-          python pipelines/bps/bps_stg_parquet_to_silver_bq.py
+          papermill pipelines/bps/bps_stg_parquet_to_silver_bq.ipynb /tmp/out_silver.ipynb \
+            -p PROJECT "$PROJECT" \
+            -p BUCKET "$BUCKET" \
+            -p SRC_PREFIX "stg/bps/" \
+            -p TARGET "rq-pharma-data-lab-26k9.silver_bps.fato_bps" \
+            -p YEARS "2024,2025"
+
   
       - name: Verify Silver rowcount
         run: |
           bq query --use_legacy_sql=false \
-          "SELECT COUNT(*) AS n FROM \`rq-pharma-data-lab-26k9.silver_bps.bps_purchases\`"
+          "SELECT COUNT(*) AS n FROM \`rq-pharma-data-lab-26k9.silver_bps.fato_bps\`"
