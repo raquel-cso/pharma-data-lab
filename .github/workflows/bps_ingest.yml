@@ -43,4 +43,5 @@ jobs:
 
       - name: Check files in landing
         run: |
-          gsutil ls -r "gs://$BUCKET/landing/bps/" | head -n 200
+          gcloud storage ls --recursive "gs://$BUCKET/landing/bps/" | head -n 200
+
