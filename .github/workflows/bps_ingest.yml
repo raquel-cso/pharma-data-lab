@@ -1,0 +1,38 @@
+name: bps-ingest-to-gcs
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * 1"  # toda segunda 12:00 UTC (~09:00 Brasil, dependendo do horário de verão)
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    env:
+      BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run BPS ingest
+        run: |
+          chmod +x pipelines/bps_to_landing.sh
+          ./pipelines/bps_to_landing.sh 2024 2025
+
+      - name: Check files in landing
+        run: |
+          gsutil ls -r "gs://$BUCKET/landing/bps/" | head -n 200
