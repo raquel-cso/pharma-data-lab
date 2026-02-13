@@ -35,6 +35,12 @@ jobs:
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
+        
+      - name: Debug auth
+        run: |
+          gcloud auth list
+          gcloud config list
+          gcloud storage ls "gs://$BUCKET/" | head -n 50
 
       - name: Run BPS ingest
         run: |
