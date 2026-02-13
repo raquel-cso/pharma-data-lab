@@ -32,7 +32,7 @@ jobs:
         env:
           BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
         run: |
-          chmod +x pipelines/bps_to_landing.sh
+          chmod +x pipelines/bps/bps_to_landing.sh
           ./pipelines/bps/bps_to_landing.sh 2024 2025
 
       - name: Check landing
