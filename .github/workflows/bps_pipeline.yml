@@ -3,22 +3,34 @@ name: bps-pipeline
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 12 * * 1"
+    - cron: "0 12 * * 1" # seg 12:00 UTC
 
 permissions:
   contents: read
   id-token: write
 
+# Defaults (serão sobrescritos pelo .env se existir)
 env:
   PROJECT_ID: rq-pharma-data-lab-26k9
   BUCKET: rq-pharma-raw-rq-pharma-data-lab-26k9
-
-  LANDING_PREFIX: landing/bps/
-  STG_PREFIX: stg/bps/
   SRC_PREFIX: stg/bps/
+  STG_PREFIX: stg/bps/
+  RAW_PREFIX: raw/bps/
+  BQ_LOCATION: US
+  YEARS: 2024,2025
 
+  BRONZE_DATASET: bronze_bps
+  MATERIALIZE_BRONZE: "1"
+  EXT_TABLE: ext_bps
+  BRONZE_VIEW: view_bronze_bps
+  BRONZE_TABLE: fato_bps
+
+  SILVER_DATASET: silver_bps
   SILVER_TARGET: rq-pharma-data-lab-26k9.silver_bps.fato_bps
-  YEARS: "2024,2025"
+  SILVER_TABLE: rq-pharma-data-lab-26k9.silver_bps.fato_bps
+
+  GOLD_DATASET: bps
+  STRIP_PREFIX: nk_
 
 jobs:
   landing:
@@ -35,16 +47,20 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Download -> landing (BPS)
+      - name: Set gcloud project
+        run: gcloud config set project "$PROJECT_ID"
+
+      - name: Download -> landing (BPS ZIPs)
         run: |
           chmod +x pipelines/bps/bps_to_landing.sh
-          ./pipelines/bps/bps_to_landing.sh 2024 2025
+          ./pipelines/bps/bps_to_landing.sh "$START_YEAR" "$END_YEAR"
 
       - name: Check landing
         run: |
           gcloud storage ls --recursive "gs://$BUCKET/landing/bps/" | head -n 200
 
-  staging:
+
+  raw:
     runs-on: ubuntu-latest
     needs: landing
     steps:
@@ -67,16 +83,56 @@ jobs:
       - name: Install deps
         run: |
           pip install -r requirements.txt
+          pip install -U papermill python-dotenv
 
-      - name: Landing -> STG (Parquet)
+      # Notebook: landing ZIP -> raw (extract)
+      # Ajuste o nome do notebook se no seu repo estiver diferente.
+      - name: Extract ZIPs (landing -> raw)
         run: |
-          papermill pipelines/bps/bps_landing_to_stg.ipynb /tmp/out_stg.ipynb
+          papermill pipelines/bps/bps_landing_zip_to_raw.ipynb /tmp/out_raw.ipynb
+
+      - name: Check raw
+        run: |
+          gcloud storage ls --recursive "gs://$BUCKET/$RAW_PREFIX" | head -n 200
+
+
+  staging:
+    runs-on: ubuntu-latest
+    needs: raw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install -U papermill python-dotenv
+
+      # Notebook: raw -> stg parquet
+      # Se você ainda estiver usando bps_landing_to_stg.ipynb, mantenha.
+      - name: Raw -> STG (Parquet)
+        run: |
+          papermill pipelines/bps/bps_raw_to_stg.ipynb /tmp/out_stg.ipynb
 
       - name: Check STG
         run: |
-          gcloud storage ls --recursive "gs://$BUCKET/stg/bps/" | head -n 200
+          gcloud storage ls --recursive "gs://$BUCKET/$STG_PREFIX" | head -n 200
 
-  silver:
+
+  bronze:
     runs-on: ubuntu-latest
     needs: staging
     steps:
@@ -99,12 +155,90 @@ jobs:
       - name: Install deps
         run: |
           pip install -r requirements.txt
+          pip install -U papermill python-dotenv
 
-      - name: Run Silver notebook
+      # Se você tiver notebook de bronze, ele roda.
+      # Se não tiver, o step só "skip".
+      - name: STG -> Bronze (BigQuery)
+        shell: bash
+        run: |
+          if [ "$MATERIALIZE_BRONZE" = "1" ]; then
+            if [ -f "pipelines/bps/bps_stg_to_bronze_bq.ipynb" ]; then
+              papermill pipelines/bps/bps_stg_to_bronze_bq.ipynb /tmp/out_bronze.ipynb
+            else
+              echo "Notebook bps_stg_to_bronze_bq.ipynb não encontrado, skip (MATERIALIZE_BRONZE=1)."
+            fi
+          else
+            echo "MATERIALIZE_BRONZE != 1, skip bronze."
+          fi
+
+
+  silver:
+    runs-on: ubuntu-latest
+    needs: bronze
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install -U papermill python-dotenv
+
+      - name: STG -> Silver (BigQuery)
         run: |
           papermill pipelines/bps/bps_stg_parquet_to_silver_bq.ipynb /tmp/out_silver.ipynb
 
-      - name: Verify Silver rowcount
+      - name: Verify Silver
         run: |
-          bq query --use_legacy_sql=false \
-          "SELECT COUNT(*) AS n FROM \`rq-pharma-data-lab-26k9.silver_bps.fato_bps\`"
+          bq --location="$BQ_LOCATION" query --use_legacy_sql=false \
+          "SELECT COUNT(*) AS n FROM \`$SILVER_TABLE\`"
+
+
+  gold:
+    runs-on: ubuntu-latest
+    needs: silver
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/137836398965/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: gha-pharma-lab@rq-pharma-data-lab-26k9.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install -U papermill python-dotenv
+
+      # Notebook: silver_bps.* -> bps.* (strip nk_*)
+      - name: Promote Silver -> Gold (strip nk_)
+        run: |
+          papermill pipelines/bps/promote_silver_to_gold_strip_nk.ipynb /tmp/out_promote.ipynb
+
+      - name: Verify Gold sample
+        run: |
+          bq --location="$BQ_LOCATION" query --use_legacy_sql=false \
+          "SELECT table_name FROM \`$PROJECT_ID.$GOLD_DATASET.INFORMATION_SCHEMA.TABLES\` LIMIT 50"
