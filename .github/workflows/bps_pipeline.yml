@@ -90,7 +90,7 @@ jobs:
       # Ajuste o nome do notebook se no seu repo estiver diferente.
       - name: Extract ZIPs (landing -> raw)
         run: |
-          papermill pipelines/bps/bps_landing_zip_to_raw.ipynb /tmp/out_raw.ipynb
+          papermill pipelines/bps/bps_landing_to_raw.ipynb /tmp/out_raw.ipynb
 
       - name: Check raw
         run: |
@@ -164,10 +164,10 @@ jobs:
         shell: bash
         run: |
           if [ "$MATERIALIZE_BRONZE" = "1" ]; then
-            if [ -f "pipelines/bps/bps_stg_to_bronze_bq.ipynb" ]; then
-              papermill pipelines/bps/bps_stg_to_bronze_bq.ipynb /tmp/out_bronze.ipynb
+            if [ -f "pipelines/bps/bps_stg_to_bronze.ipynb" ]; then
+              papermill pipelines/bps/bps_stg_to_bronze.ipynb /tmp/out_bronze.ipynb
             else
-              echo "Notebook bps_stg_to_bronze_bq.ipynb não encontrado, skip (MATERIALIZE_BRONZE=1)."
+              echo "Notebook bps_stg_to_bronze.ipynb não encontrado, skip (MATERIALIZE_BRONZE=1)."
             fi
           else
             echo "MATERIALIZE_BRONZE != 1, skip bronze."
@@ -201,7 +201,7 @@ jobs:
 
       - name: STG -> Silver (BigQuery)
         run: |
-          papermill pipelines/bps/bps_stg_parquet_to_silver_bq.ipynb /tmp/out_silver.ipynb
+          papermill pipelines/bps/bps_bronze_to_silver.ipynb /tmp/out_silver.ipynb
 
       - name: Verify Silver
         run: |
@@ -237,7 +237,7 @@ jobs:
       # Notebook: silver_bps.* -> bps.* (strip nk_*)
       - name: Promote Silver -> Gold (strip nk_)
         run: |
-          papermill pipelines/bps/promote_silver_to_gold_strip_nk.ipynb /tmp/out_promote.ipynb
+          papermill pipelines/bps/bps_silver_to_gold.ipynb /tmp/out_promote.ipynb
 
       - name: Verify Gold sample
         run: |
