@@ -8,9 +8,10 @@ FORCE="${FORCE:-0}"
 EXTRACT="${EXTRACT:-0}"
 
 years=("$@")
-if [ ${#years[@]} -eq 0 ]; then
-  echo "Passe pelo menos um ano. Ex: ./bps_to_landing.sh 2024 2025"
-  exit 1
+if [ ${#years[@]} -eq 2 ]; then
+  start="${years[0]}"; end="${years[1]}"
+  years=()
+  for ((y=start; y<=end; y++)); do years+=("$y"); done
 fi
 
 workdir="/tmp/bps_download"

@@ -17,19 +17,16 @@ env:
   STG_PREFIX: stg/bps/
   RAW_PREFIX: raw/bps/
   BQ_LOCATION: US
-  YEARS: 2024,2025
-  START_YEAR: 2024
-  END_YEAR: 2025
+  BASE_YEAR: "AUTO"
+  LOOKBACK_YEARS: "4"
   BRONZE_DATASET: bronze_bps
   MATERIALIZE_BRONZE: "1"
   EXT_TABLE: ext_bps
   BRONZE_VIEW: view_bronze_bps
   BRONZE_TABLE: fato_bps
-
   SILVER_DATASET: silver_bps
   SILVER_TARGET: rq-pharma-data-lab-26k9.silver_bps.fato_bps
   SILVER_TABLE: rq-pharma-data-lab-26k9.silver_bps.fato_bps
-
   GOLD_DATASET: bps
   STRIP_PREFIX: nk_
 
@@ -50,6 +47,26 @@ jobs:
 
       - name: Set gcloud project
         run: gcloud config set project "$PROJECT_ID"
+
+      - name: Compute years (base year - lookback)
+        shell: bash
+        run: |
+          if [ "${BASE_YEAR}" = "AUTO" ]; then
+            BASE=$(date -u +%Y)
+            BASE=$((BASE - 1))
+          else
+            BASE="${BASE_YEAR}"
+          fi
+    
+          LOOKBACK="${LOOKBACK_YEARS}"
+          START=$((BASE - LOOKBACK))
+          END=$((BASE))
+    
+          echo "BASE_YEAR=${BASE}" >> $GITHUB_ENV
+          echo "START_YEAR=${START}" >> $GITHUB_ENV
+          echo "END_YEAR=${END}" >> $GITHUB_ENV
+    
+          echo "Using years: ${START}..${END}"
 
       - name: Download -> landing (BPS ZIPs)
         run: |
